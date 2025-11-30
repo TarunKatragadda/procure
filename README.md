@@ -607,44 +607,6 @@ Aborted!
 (procure_agent) 
 ```
 
----
-
-## 📝 Code Comments Guide
-
-All code files include:
-
-**✅ Function Docstrings:**
-```python
-def query_chroma(query: str) -> str:
-    """
-    Searches the internal knowledge base for information.
-    
-    Args:
-        query: Natural language query
-        
-    Returns:
-        Formatted search results with metadata
-    """
-```
-
-**✅ Design Pattern Comments:**
-```python
-# Memory Bank Pattern: Supervisor maintains context for stateless agents
-```
-
-**✅ Behavior Explanations:**
-```python
-# Graceful fallback: If MCP fails, work in demo mode
-```
-
-**✅ Implementation Notes:**
-```python
-# ADK agents are stateless when used as tools
-# The supervisor must provide complete context each time
-```
-
----
-
 ## 🚧 Future Enhancements
 
 1. **Production Email Authentication**
