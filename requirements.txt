@@ -4,3 +4,4 @@ python-dotenv
 httpx
 mcp
 google-adk
+nest_asyncio

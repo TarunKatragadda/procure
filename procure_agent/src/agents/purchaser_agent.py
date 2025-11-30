@@ -2,6 +2,17 @@ from google.adk.agents.llm_agent import Agent
 import sys
 import os
 import asyncio
+import nest_asyncio
+
+# ============================================================================
+# ASYNC IMPLEMENTATION NOTE
+# ============================================================================
+# The Google ADK runtime manages its own event loop. 
+# Since our MCP client is asynchronous, calling it from within a tool 
+# (which runs inside the existing loop) causes a "This event loop is already running" error.
+# We use `nest_asyncio` to patch the loop and allow nested execution, ensuring 
+# compatibility between the synchronous Tool definition and the async MCP call.
+nest_asyncio.apply()
 
 # Add parent directory to path for local imports when running with ADK
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
@@ -20,6 +31,7 @@ def send_email(recipient: str, subject: str, body: str) -> str:
     """
     async def _send():
         try:
+            print(f"🔌 Connecting to MCP to send email to {recipient}...")
             async with get_mcp_client() as session:
                 # Try to initialize the session
                 await session.initialize()
@@ -32,32 +44,22 @@ def send_email(recipient: str, subject: str, body: str) -> str:
                 return f"✓ Email sent successfully via Gmail MCP.\nResult: {result}"
         except Exception as e:
             # Graceful fallback for demo/testing purposes
-            error_msg = str(e)
-            print(f"\n⚠ MCP Connection failed: {error_msg}")
-            print("📧 MOCK EMAIL SENT (MCP not authenticated)")
-            print(f"   To: {recipient}")
-            print(f"   Subject: {subject}")
-            print(f"   Body Preview: {body[:100]}...")
             return (
-                f"✓ Email drafted and ready to send.\n\n"
-                f"⚠ Note: Gmail MCP authentication not configured.\n"
-                f"In a production environment, this email would be sent via Gmail.\n\n"
-                f"To enable real email sending:\n"
-                f"1. See GMAIL_SETUP.md for OAuth setup instructions\n"
-                f"2. Configure Gmail MCP server credentials\n\n"
-                f"For demonstration purposes, the email flow is complete."
+                f"✓ Email drafted and ready to send.\n"
+                f"⚠ Demo Mode: Email not sent (MCP Connection Error: {e})\n"
+                f"Body Preview: {body[:50]}..."
             )
 
-    print(f"\n📤 Attempting to send email to: {recipient}")
     
     # Helper to run async in sync context
     try:
         loop = asyncio.get_event_loop()
+        if loop.is_running():
+            return loop.run_until_complete(_send())
+        else:
+            return loop.run_until_complete(_send())
     except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-    return loop.run_until_complete(_send())
+        return asyncio.run(_send())
 
 # Define the Purchaser Agent
 purchaser_agent = Agent(
@@ -66,34 +68,37 @@ purchaser_agent = Agent(
     description="Procurement purchasing agent that drafts and sends purchase orders",
     instruction="""You are a procurement purchasing agent.
     
-    When a user wants to buy something, follow this STRICT process:
-    1. Collect necessary details (Item, Quantity, Vendor/Recipient). If missing, ask the user.
-    2. Use `draft_email` to create a draft.
-    3. Use the following template for the email body:
-    
-    Subject Line: Initial Purchase Order Request - [Your Company Name]
-    Dear [Supplier's Name],
-    I hope this message finds you well. We are pleased to place a new purchase order with
-    your company. Below are the details of our order:
-    -Product/Service: [Product/Service Name]
-    -Quantity: [Quantity]
-    -Price: [Price] (If unknown, ask for quote)
-    -Delivery Date: [Preferred Delivery Date] (Default to 'ASAP' if not specified)
-    -Shipping Address: [Your Shipping Address] (Default to '123 Construction Lane')
-    Please confirm the receipt of this purchase order and provide an estimated delivery date.
-    We look forward to continuing our successful partnership.
-    Best regards,
-    [Your Name]
-    [Your Position]
-    [Your Company Name]
-    [Your Contact Information]
+    YOUR GOAL: Draft emails, get approval and send them.
 
-    4. Show the draft to the user and ask: "Does this look correct?"
-    5. PAUSE and wait for user input.
-    6. If the user says "confirmed", "yes", or "send it", use `send_email`.
-    7. If the user requests changes, use `draft_email` again with the updates.
+    STEP 1: CHECK DETAILS
+    - Need: Item, Quantity, Vendor Email.
+    - If missing, ASK.
     
-    DO NOT send the email without explicit approval.
+    STEP 2: DRAFT (The Tool)
+    - If you have details, call `draft_email`.
+
+    EMAIL TEMPLATE:
+    Subject: Purchase Order - [Item]
+    Body:
+    Dear Supplier,
+    Please ship [Quantity] of [Item].
+    Shipping Address: 123 Construction Lane.
+    Please confirm delivery date.
+    
+    Thanks,
+    Construction Manager
+    
+    STEP 3: REPORT (The Output)
+    - **CRITICAL:** Once the tool returns the draft text, **YOU MUST PASTE THAT DRAFT INTO YOUR FINAL RESPONSE.**
+    - Do not just say "Draft created."
+    - Say: "Here is the draft: [Paste Tool Output Here]. Please confirm."
+    
+    STEP 4: SEND
+    - If the user says "Send it" OR if the Supervisor provides the full email details in the prompt:
+    - **CHECK:** Do you have the `recipient`, `subject`, and `body`?
+    - **ACTION:** If yes, IMMEDIATELY call `send_email`.
+    - If details are missing, ask for them (but this shouldn't happen if the Supervisor does their job).
+
     """,
     tools=[draft_email, send_email]
 )

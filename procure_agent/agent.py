@@ -1,155 +1,149 @@
-from google.adk.agents.llm_agent import Agent
+# ==============================================================================
+# SUPERVISOR AGENT - Root Entry Point for Multi-Agent System
+# ==============================================================================
+#
+# This file defines the root_agent which orchestrates the multi-agent system
+# using the "Memory Bank" pattern to solve the stateless sub-agent problem.
+#
+# DESIGN PATTERN: Supervisor (Router) + Memory Bank
+# 
+# The supervisor analyzes user intent and routes requests to specialist agents:
+#   - query_agent: For information retrieval (RAG with ChromaDB)
+#   - purchaser_agent: For purchase orders (HITL email automation)
+#
+# KEY INNOVATION - Memory Bank Pattern:
+# ADK's AgentTool() creates stateless sub-agents that don't remember previous
+# conversation turns. The supervisor solves this by:
+#   1. Maintaining full conversation history (via ADK's native session)
+#   2. Analyzing context before each delegation
+#   3. Combining multi-turn information into complete instructions
+#   4. Extracting draft details for approvals
+#
+# This enables complex workflows (multi-turn data gathering, HITL approvals)
+# without requiring persistent state storage in sub-agents.
+#
+# ==============================================================================
+
+from google.adk.agents import LlmAgent
+from google.adk.tools import AgentTool, FunctionTool
 import sys
 import os
 
 # Add current directory to path for local imports
 sys.path.insert(0, os.path.dirname(__file__))
 
+# Import specialist agents
 from src.agents.query_agent import query_agent
 from src.agents.purchaser_agent import purchaser_agent
 
-def query_tool(query: str) -> str:
-    """
-    Call this tool when the user asks a question or wants information about procurement data.
-    """
-    # Import here to avoid circular dependencies
-    from src.utils.chroma_db import query_collection
-    
-    # Query ChromaDB directly (simulating what query_agent does)
-    results = query_collection(query)
-    
-    if not results['documents'] or not results['documents'][0]:
-        return "No relevant information found in the knowledge base."
-         
-    documents = results['documents'][0]
-    metadatas = results['metadatas'][0]
-    
-    context = ""
-    for doc, meta in zip(documents, metadatas):
-        context += f"Date: {meta.get('date')}, Sender: {meta.get('sender')}\nContent: {doc}\n---\n"
-    
-    return context if context else "No relevant information found."
+# ==============================================================================
+# ROOT AGENT DEFINITION
+# ==============================================================================
 
-def purchasing_tool(message: str) -> str:
-    """
-    Call this tool when the user wants to buy something, place an order, or draft an email.
-    Also use this tool to pass the user's approval ("yes", "send it") or changes back to the purchasing agent.
-    """
-    import google.generativeai as genai
-    from dotenv import load_dotenv
-    import os
-    
-    load_dotenv()
-    genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-    
-    # Use Gemini to extract purchase details from the message
-    model = genai.GenerativeModel('gemini-2.0-flash')
-    
-    extraction_prompt = f"""Extract purchase order details from this message:
-"{message}"
-
-Extract and return in JSON format:
-{{
-  "item": "what to buy",
-  "quantity": "how many",
-  "vendor_name": "supplier name if mentioned",
-  "vendor_email": "email if provided",
-  "price": "total or unit price if mentioned",
-  "needs_info": ["list of missing required fields"]
-}}
-
-If critical info is missing, list it in needs_info.
-"""
-    
-    try:
-        response = model.generate_content(extraction_prompt)
-        import json
-        details = json.loads(response.text.strip())
-        
-        # Check if we have enough info to draft
-        if details.get("needs_info") and len(details["needs_info"]) > 0:
-            missing = ", ".join(details["needs_info"])
-            return f"""I'd be happy to draft a purchase order! However, I need some more information:
-
-Missing details: {missing}
-
-Please provide:
-- Item/Product name
-- Quantity
-- Vendor name and email address
-- Price (if known)
-"""
-        
-        # Draft the email using the template
-        item = details.get("item", "Unknown Item")
-        quantity = details.get("quantity", "N/A")
-        vendor_name = details.get("vendor_name", "Supplier")
-        vendor_email = details.get("vendor_email", "supplier@example.com")
-        price = details.get("price", "Please provide quote")
-        
-        draft = f"""--- DRAFT PURCHASE ORDER EMAIL ---
-
-To: {vendor_email}
-Subject: Initial Purchase Order Request - Construction Co
-
-Dear {vendor_name},
-
-I hope this message finds you well. We are pleased to place a new purchase order with your company. Below are the details of our order:
-
-- Product/Service: {item}
-- Quantity: {quantity}
-- Price: {price}
-- Delivery Date: ASAP
-- Shipping Address: 123 Construction Lane
-
-Please confirm the receipt of this purchase order and provide an estimated delivery date.
-
-We look forward to continuing our successful partnership.
-
-Best regards,
-Construction Manager
-Construction Co
-manager@constructionco.com
-
------------------------------------
-
-📋 **Next Steps:**
-This is a DRAFT only. To send this email:
-
-**Option 1 - CLI (Recommended for actual sending):**
-```
-adk run .
-```
-Then follow the Human-in-the-Loop approval process.
-
-**Option 2 - Web UI (Draft only):**
-Review the draft above. If you'd like to make changes, please let me know what to modify.
-
-⚠️ Note: The web interface can draft emails but cannot actually send them without the full CLI workflow for security reasons.
-"""
-        return draft
-        
-    except Exception as e:
-        return f"""Error processing purchase request: {e}
-
-Please provide purchase details in a clear format:
-- "I want to buy [quantity] [item] from [vendor] at [vendor@email.com] for $[price]"
-"""
-
-# Define the root Supervisor Agent
-root_agent = Agent(
+root_agent = LlmAgent(
     model='gemini-2.0-flash',
     name='supervisor_agent',
-    description="Construction manager assistant that routes requests to specialist agents",
-    instruction="""You are a construction manager assistant. 
-    Your job is to route user requests to the appropriate specialist agent.
-    
-    - If the user asks for information, status, or history, call the `query_tool`.
-    - If the user wants to buy something, place an order, or is responding to a draft (e.g., "yes", "change it"), call the `purchasing_tool`.
-    
-    Always pass the user's full message to the tool.
-    When the tool returns a response, output that response to the user EXACTLY as is.
-    Do not summarize or alter the sub-agent's response.
-    """,
-    tools=[query_tool, purchasing_tool]
+    description='Construction procurement supervisor that routes requests to specialist agents',
+    instruction="""You are a construction procurement supervisor managing specialist agents.
+
+Your role is to analyze user requests, delegate and be the **memory bank** for specialist agents.
+
+**Use query_agent when the user:**
+- Asks for information, status, or history
+- Wants to know about orders, invoices, delays
+- Needs to search past communications
+Examples: "What's the status of the brick order?", "Show me recent invoices"
+
+**Use purchaser_agent when the user:**
+- Wants to buy something or place an order
+- Is responding to a draft email ("yes", "send it", "no", "cancel")
+- Wants to initiate any purchase action
+Examples: "I want to buy 100 bricks", "yes, send it"
+
+ROUTING RULES:
+1. **Context Management:** The specialist agents have NO MEMORY. You must provide full details in every call.
+   - If user says "bob@brickco.com", DO NOT just send the email.
+   - Send: "Order [Item] [Quantity] from bob@brickco.com" (Look at chat history for item/qty).
+
+2. **Confirmation Rule:** If the user says "yes", "confirm", or "send it", the `purchaser_agent` WILL NOT REMEMBER the draft.
+   - **YOU MUST** look at the conversation history where you showed the draft.
+   - **YOU MUST** extract the `To`, `Subject`, and `Body` from that draft.
+   - **YOU MUST** command the purchaser: "User confirmed. Send the email to [To] with subject [Subject] and body [Body]...".
+
+3. **OUTPUT RULE (CRITICAL):** - When the `purchaser_agent` returns a draft or a question, **YOU MUST REPEAT IT TO THE USER.**
+   - **NEVER** output raw JSON like `{"result": "..."}`.
+   - **NEVER** say "Draft sent."
+   - **ALWAYS** show the actual content the agent gave you.
+   
+   Example:
+   - Bad: "The draft was created."
+   - Good: "Here is the draft created by the purchaser agent: [Insert Full Draft Text]"
+   - User: "Send it"
+   - BAD Command to Agent: "User confirmed." (Agent crashes)
+   - GOOD Command to Agent: "User confirmed. Send the email to bob@brickco.com with subject 'Purchase Order' and body 'Dear Supplier...'"
+
+CRITICAL CONTEXT RULES (PREVENT AMNESIA):
+The `purchaser_agent` has NO MEMORY of previous messages. You are the memory bank.
+1. When the user adds new information (e.g., provides a missing email), you must **COMBINE** it with the previous details (item, quantity) from the conversation history.
+2. Send a **COMPLETE, SELF-CONTAINED INSTRUCTION** to the purchaser_agent every time.
+
+**Bad Example (Do not do this):**
+User: "Order bricks" -> You send: "Order bricks" -> Agent asks for email.
+User: "bob@gmail.com" -> You send: "bob@gmail.com" -> Agent fails (forgot about bricks).
+
+**Good Example (Do this):**
+User: "Order bricks" -> You send: "Order bricks" -> Agent asks for email.
+User: "bob@gmail.com" -> You send: "Order bricks from bob@gmail.com" -> Agent succeeds.
+
+Always return the specialist agent's response exactly.
+
+When in doubt:
+- query_agent for information
+- purchaser_agent for purchases/orders
+""",
+    tools=[
+        AgentTool(query_agent),       # Wraps query_agent as a callable tool
+        AgentTool(purchaser_agent)    # Wraps purchaser_agent as a callable tool
+    ]
 )
+
+# ==============================================================================
+# HOW AGENT-AS-TOOL WORKS IN ADK
+# ==============================================================================
+#
+# When we pass Agent objects wrapped in AgentTool() to the tools parameter:
+#
+# 1. ADK creates tool schemas using the agent's name and description:
+#   - Tool name: "query_agent" (from agent.name)
+#   - Tool description: "Procurement research assistant..." (from agent.description)
+#
+# 2. When the supervisor needs to use a tool, it analyzes intent and selects:
+#   - "User asks about order status" → Use query_agent tool
+#   - "User wants to buy something" → Use purchaser_agent tool
+#
+# 3. Tool invocation:
+#   - Supervisor passes the message to the selected agent
+#   - Sub-agent processes with its own tools and instructions
+#   - Returns result back to supervisor
+#   - Supervisor relays to user
+#
+# 4. State Management (Critical):
+#   - Sub-agents are STATELESS - they don't remember previous turns
+#   - Supervisor manages state through its conversation history
+#   - Before calling a tool, supervisor extracts relevant context
+#   - Passes complete, self-contained instructions each time
+#
+# Example:
+#   Turn 1: User: "Order bricks"
+#          Supervisor → purchaser_agent: "Order bricks"
+#          Response: "Need vendor email"
+#   
+#   Turn 2: User: "bob@example.com"
+#          Supervisor (Memory Bank):
+#            - Looks at Turn 1: User wanted "bricks"
+#            - Combines: "Order bricks from bob@example.com"
+#          Supervisor → purchaser_agent: "Order bricks from bob@example.com"
+#          Response: Draft email (success!)
+#
+# This pattern enables multi-turn workflows without persistent state.
+# ==============================================================================

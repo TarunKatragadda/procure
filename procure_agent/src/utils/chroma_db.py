@@ -4,7 +4,8 @@ import os
 
 # Initialize ChromaDB Client
 # Using a local persistent directory
-DB_DIR = os.path.join(os.getcwd(), "chroma_db")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_DIR = os.path.join(BASE_DIR, "chroma_storage")
 client = chromadb.PersistentClient(path=DB_DIR)
 
 # Use Google Generative AI Embeddings (if available) or default SentenceTransformer
