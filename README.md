@@ -315,7 +315,7 @@ adk run .
 
 **Web UI Mode:**
 ```bash
-cd procure_agent
+cd /procure
 adk web
 ```
 Then open the browser at `http://localhost:8000`
@@ -365,7 +365,7 @@ Does this look correct?
 | `MCP_SERVER_COMMAND` | `npx` | MCP server executable |
 | `MCP_SERVER_ARGS` | `-y @modelcontextprotocol/server-gmail` | MCP server arguments |
 
-### Gmail MCP Setup (Optional)
+### Gmail MCP Setup
 
 **For Production Email Sending:**
 
@@ -381,6 +381,12 @@ The system works in demo mode without Gmail authentication. To enable real email
 - Draft functionality works normally
 - "Send" returns success message with note about demo mode
 
+### Configure your Gemini API Key
+
+Get your API key
+
+- If you don't have one already, create an API key in [Google AI Studio](https://aistudio.google.com/app/api-keys).
+- Add the google API Key in the .env file
 ---
 
 ## 📊 Architecture Diagrams
