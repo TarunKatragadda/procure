@@ -609,26 +609,22 @@ Aborted!
 
 ## 🚧 Future Enhancements
 
-1. **Production Email Authentication**
-   - Full Gmail OAuth2 setup
-   - Secure credential storage
-
-2. **Enhanced RAG**
+1. **Enhanced RAG**
    - Multi-modal documents (PDFs, images)
    - Better chunking strategies
    - Reranking for precision
 
-3. **Advanced Workflows**
+2. **Advanced Workflows**
    - Multi-step approval chains
    - Budget verification
    - Vendor validation
 
-4. **State Persistence**
+3. **State Persistence**
    - Database for conversation history
    - Draft persistence across sessions
    - Audit logging
 
-5. **Web UI Improvements**
+4. **Web UI Improvements**
    - Visual draft editor
    - Email template gallery
    - Analytics dashboard
@@ -649,15 +645,15 @@ GitHub: Tarun_Katragadda
 
 Venkata Sai Ritesh Katragadda  
 Kaggle Username: Katragadda Venkata Sai Ritesh   
-GitHub: 
+GitHub: VenkataSaiRitesh
 
 Yashoda Krishna Srinivasu Bokam
 Kaggle Username: Yashodaksb
-GitHub: 
+GitHub: srinivasbyk
 
 Sai Sushanth Tharigopula
 Kaggle Username: Sai Sushanth Tharigopula
-GitHub: 
+GitHub: Sushanth Tharigopula
 
 ---
 
